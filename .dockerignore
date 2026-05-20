@@ -9,6 +9,4 @@ __pycache__
 consilium.db
 uploads/
 data/
-*.md
-!README.md
 agent-transcripts/

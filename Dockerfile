@@ -12,20 +12,17 @@ ENV UV_COMPILE_BYTECODE=1 \
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project --no-dev
 
-COPY src ./src
-RUN uv sync --frozen --no-dev
-
 
 FROM python:3.13-slim-bookworm AS runtime
 
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/src /app/src
-COPY pyproject.toml ./
+COPY src ./src
 COPY scripts ./scripts
 
 ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH="/app/src" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
