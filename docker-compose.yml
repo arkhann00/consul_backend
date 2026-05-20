@@ -1,0 +1,22 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: consilium-api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: sqlite:////app/data/consilium.db
+      UPLOADS_DIR: /app/uploads
+      DEBUG: "false"
+    volumes:
+      - consilium_data:/app/data
+      - consilium_uploads:/app/uploads
+    restart: unless-stopped
+
+volumes:
+  consilium_data:
+  consilium_uploads:
