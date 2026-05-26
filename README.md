@@ -1,54 +1,80 @@
 # Consilium Backend
 
-FastAPI backend for the Consilium dentistry mobile app.
+REST API на **FastAPI** для мобильного приложения стоматологической клиники Consilium и админ-панели контента.
 
-## AI / client integration docs
+| Документ | Назначение |
+|----------|------------|
+| [AI_BACKEND.md](./AI_BACKEND.md) | Полная спецификация API для ИИ-агентов |
+| [AI_CLIENT_MOBILE.md](./AI_CLIENT_MOBILE.md) | Слой данных мобильного приложения (пациент) |
+| [AI_CLIENT_ADMIN.md](./AI_CLIENT_ADMIN.md) | Слой данных админ-панели |
 
-| File | For |
-|------|-----|
-| [AI_BACKEND.md](./AI_BACKEND.md) | Full API reference for agents |
-| [AI_CLIENT_MOBILE.md](./AI_CLIENT_MOBILE.md) | Patient mobile app data layer |
-| [AI_CLIENT_ADMIN.md](./AI_CLIENT_ADMIN.md) | Admin panel data layer |
+## Возможности
 
-## Modules
+- **Auth** — регистрация, вход, JWT access token, ротация refresh token
+- **Doctors** — публичное чтение; CRUD и загрузка аватара — только админ
+- **News** — публичное чтение (сортировка по дате, новые первые); CRUD и загрузка изображений — только админ
 
-- **Auth** — registration, login, Bearer access token, refresh token rotation
-- **Doctors** — CRUD for admin panel (public read)
-- **News** — CRUD for admin panel (public read)
+## Требования
 
-## Setup
+- Python **3.13+**
+- [uv](https://docs.astral.sh/uv/) (менеджер зависимостей)
+
+## Структура проекта
+
+```
+consul_back/
+├── src/
+│   ├── main.py              # точка входа, CORS, /health, /uploads
+│   ├── config.py            # настройки из .env
+│   ├── database.py
+│   ├── auth/                # JWT, refresh, зависимости
+│   ├── models/
+│   ├── routers/             # auth, doctors, news
+│   ├── schemas/
+│   └── utils/uploads.py
+├── scripts/create_admin.py  # интерактивное создание админа
+├── docker/                  # entrypoint
+├── Dockerfile               # production (multi-stage)
+├── Dockerfile.dev           # dev + --reload
+├── docker-compose.yml
+├── docker-compose.dev.yml
+└── .env.example
+```
+
+## Локальная разработка
 
 ```bash
+cp .env.example .env          # задай SECRET_KEY для production
 uv sync
 uv run uvicorn main:app --reload --app-dir src
 ```
 
-API docs: http://127.0.0.1:8000/docs
+- API: http://127.0.0.1:8000
+- Swagger: http://127.0.0.1:8000/docs
+- Health: `GET /health` → `{ "status": "ok" }`
+
+По умолчанию SQLite: `consilium.db` в корне репозитория, загрузки: `uploads/`.
 
 ## Docker
 
-Production:
+**Production:**
 
 ```bash
-cp .env.example .env   # задай SECRET_KEY
+cp .env.example .env
 docker compose up --build -d
 ```
 
-Development (hot reload + монтирование `src/`):
+**Development** (hot reload, `src/` смонтирован read-only):
 
 ```bash
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-Создать админа в контейнере:
+Создать или повысить пользователя до админа в контейнере:
 
 ```bash
 docker compose exec api python scripts/create_admin.py
-```
-
-Для dev-контейнера:
-
-```bash
+# dev:
 docker compose -f docker-compose.dev.yml exec api python scripts/create_admin.py
 ```
 
@@ -64,39 +90,58 @@ docker run -p 8000:8000 --env-file .env \
   consilium-api
 ```
 
-## Create admin user
+## Администратор
+
+Админов нельзя создать через `POST /auth/register`. Используйте интерактивный скрипт:
 
 ```bash
 uv run python scripts/create_admin.py
 ```
 
-## Environment
+Если пользователь с таким телефоном уже есть — скрипт выставит `is_admin: true` и обновит пароль.
 
-Copy `.env.example` to `.env` and set `SECRET_KEY` for production.
+## Переменные окружения
 
-## API Overview
+Скопируйте `.env.example` → `.env`.
 
-| Method | Endpoint | Auth |
-|--------|----------|------|
-| POST | `/api/v1/auth/register` | — |
-| POST | `/api/v1/auth/login` | — |
-| POST | `/api/v1/auth/refresh` | refresh_token in body |
-| GET | `/api/v1/auth/me` | Bearer |
-| GET | `/api/v1/doctors` | — |
-| POST | `/api/v1/doctors` or `/json` | Admin Bearer |
-| PUT | `/api/v1/doctors/{id}` or `/json` | Admin Bearer |
-| DELETE | `/api/v1/doctors/{id}` | Admin Bearer |
-| GET | `/api/v1/news` | — |
-| POST | `/api/v1/news` or `/json` | Admin Bearer |
-| PUT | `/api/v1/news/{id}` or `/json` | Admin Bearer |
-| DELETE | `/api/v1/news/{id}` | Admin Bearer |
+| Переменная | По умолчанию | Описание |
+|------------|--------------|----------|
+| `SECRET_KEY` | `change-me-...` | Подпись JWT; обязательно сменить в production |
+| `DEBUG` | `true` | Режим отладки |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Срок жизни access token |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Срок жизни refresh token |
+| `DATABASE_URL` | `sqlite:///.../consilium.db` | URL БД (в Docker: `sqlite:////app/data/consilium.db`) |
+| `UPLOADS_DIR` | `./uploads` | Каталог файлов (в Docker: `/app/uploads`) |
+| `API_PORT` | `8000` | Порт хоста в docker-compose |
 
-### Auth flow
+## API (кратко)
 
-1. `POST /api/v1/auth/login` → `{ access_token, refresh_token }`
-2. Use `Authorization: Bearer <access_token>` for protected routes
-3. When access token expires → `POST /api/v1/auth/refresh` with `{ "refresh_token": "..." }`
+Префикс: `/api/v1`. Статика: `GET /uploads/...` (вне префикса).
 
-### Admin CRUD with file upload
+| Метод | Endpoint | Auth |
+|-------|----------|------|
+| POST | `/auth/register` | — |
+| POST | `/auth/login` | — |
+| POST | `/auth/refresh` | `refresh_token` в теле |
+| GET | `/auth/me` | Bearer |
+| GET | `/doctors`, `/doctors/{id}` | — |
+| POST | `/doctors` или `/doctors/json` | Admin Bearer |
+| PUT | `/doctors/{id}` или `/doctors/{id}/json` | Admin Bearer |
+| DELETE | `/doctors/{id}` | Admin Bearer |
+| GET | `/news`, `/news/{id}` | — |
+| POST | `/news` или `/news/json` | Admin Bearer |
+| PUT | `/news/{id}` или `/news/{id}/json` | Admin Bearer |
+| DELETE | `/news/{id}` | Admin Bearer |
 
-Use `multipart/form-data` on `POST /api/v1/doctors` and `POST /api/v1/news`, or JSON on `*/json` endpoints.
+### Auth
+
+1. `POST /api/v1/auth/login` → `{ access_token, refresh_token, token_type }`
+2. Заголовок `Authorization: Bearer <access_token>` для защищённых маршрутов
+3. При истечении access → `POST /api/v1/auth/refresh` с `{ "refresh_token": "..." }` (старый refresh отзывается)
+
+### Загрузка файлов (админ)
+
+`multipart/form-data` на `POST/PUT` без суффикса `/json`, либо JSON на `*/json`.  
+Лимит: **5 MB**; типы: JPEG, PNG, WebP, GIF.
+
+Подробности — в [AI_BACKEND.md](./AI_BACKEND.md).
